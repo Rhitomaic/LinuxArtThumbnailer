@@ -8,7 +8,10 @@ For .clip I just wanted to see my old artworks made with [Clip Studio Paint](htt
 
 
 ## How to install?
-Right now, the install script works with Ubuntu and Fedora 42, but only tested on [Fedora 42 - KDE Plasma](https://fedoraproject.org/wiki/Releases/42/ChangeSet) - on [Dolphin](https://apps.kde.org/dolphin/)
+Right now, the install script works with Ubuntu and Fedora 42, but only tested on [Fedora 42 - KDE Plasma](https://fedoraproject.org/wiki/Releases/42/ChangeSet) - on [Dolphin](https://apps.kde.org/dolphin/).
+
+Sadly, since I'm not very good at bash, the install script is generated with ChatGPT.
+
 All you do is go to the folder in which you want to install thumbnailer for, if you want to do both, here's a snippet of bash script for ya!
 
 ```bash
