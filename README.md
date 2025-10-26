@@ -2,7 +2,7 @@
  Provides thumbnailer/preview in your linux file explorer/file manager for .clip and .mdp files (planning to add more)
 
 ## Background
-I am frustrated to not have support for thumbnailer for these two programs I use on [Windows](https://www.reddit.com/r/microsoftsucks/comments/1e19ouu/windows_is_the_worst_piece_of_shit_ever_its_not/) which are [FireAlpaca](https://firealpaca.com/) and [Clip Studio Paint](https://www.clipstudio.net/en/), I made this so that I can read .mdp files but it doesn't have a thumbnailer so I can't really see what I was opening. For .clip I just wanted to see my old artworks made with CSP to be shown in Dolphin, and I finally managed to do it.
+I am frustrated to not have support for thumbnailer for these two programs I use on [Windows](https://www.reddit.com/r/microsoftsucks/comments/1e19ouu/windows_is_the_worst_piece_of_shit_ever_its_not/) which are [FireAlpaca](https://firealpaca.com/) and [Clip Studio Paint](https://www.clipstudio.net/en/), I made this so that I can read `.mdp` files but it doesn't have a thumbnailer so I can't really see what I was opening. For `.clip` I just wanted to see my old artworks made with CSP to be shown in Dolphin, and I finally managed to do it.
 
 ### MediBang Paint/FireAlpaca .mdp support
 FireAlpaca has a Linux port, which lets us read `.mdp` files. However, it doesn’t provide thumbnails for file managers. This tool extracts the **embedded preview image** from `.mdp` files to generate thumbnails, without accessing the artwork layers or modifying the file.
