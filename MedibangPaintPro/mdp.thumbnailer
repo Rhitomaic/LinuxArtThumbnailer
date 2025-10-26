@@ -1,0 +1,4 @@
+[Thumbnailer Entry]
+TryExec=mdp-thumbnailer
+Exec=mdp-thumbnailer %i %o
+MimeType=application/x-mdiapp-mdp;

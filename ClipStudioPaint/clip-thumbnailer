@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+"""
+clip-thumbnailer
+Generates thumbnails for Clip Studio Paint (.clip) files.
+
+Usage:
+    clip-thumbnailer [input_file] [output_file]
+
+Example:
+    clip-thumbnailer artwork.clip /tmp/artwork.png
+
+Credits:
+    Thank you so much LavenderSnek for making https://github.com/LavenderSnek/clipdecode so I can use it as a reference!
+"""
+
+import sys
+import sqlite3
+from pathlib import Path
+
+def extract_sqlite_from_clip(clip_path: Path) -> bytes:
+    data = clip_path.read_bytes()
+    sig = b"SQLite format 3\x00"
+    idx = data.find(sig)
+    if idx == -1:
+        raise RuntimeError("No SQLite header found in clip file")
+    return data[idx:]
+
+def extract_canvas_preview(sqlite_bytes: bytes) -> bytes | None:
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False) as tmp:
+        tmp.write(sqlite_bytes)
+        tmp.flush()
+        conn = sqlite3.connect(tmp.name)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT ImageData FROM CanvasPreview LIMIT 1;")
+        row = cur.fetchone()
+        if not row or row[0] is None:
+            return None
+        blob = row[0]
+        png_sig = b"\x89PNG\r\n\x1a\n"
+        p = blob.find(png_sig)
+        if p != -1:
+            end = blob.find(b"IEND", p)
+            if end != -1:
+                end += 8
+                return blob[p:end]
+        return blob
+    finally:
+        conn.close()
+
+def extract_clip_thumbnail(input_path: Path, output_path: Path):
+    sqlite_bytes = extract_sqlite_from_clip(input_path)
+    png_bytes = extract_canvas_preview(sqlite_bytes)
+    if not png_bytes:
+        raise RuntimeError("No CanvasPreview image found in this .clip file")
+    output_path.write_bytes(png_bytes)
+
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: clip-thumbnailer [input_file] [output_file]")
+        sys.exit(1)
+    input_file = Path(sys.argv[1])
+    output_file = Path(sys.argv[2])
+    try:
+        extract_clip_thumbnail(input_file, output_file)
+    except Exception as e:
+        print(f"Error generating thumbnail: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

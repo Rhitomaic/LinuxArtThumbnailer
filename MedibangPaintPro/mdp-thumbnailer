@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+import sys, re, zlib, math
+import numpy as np
+from pathlib import Path
+from PIL import Image
+
+def extract_thumbnail(mdp_path: Path, output_path: Path):
+    data = mdp_path.read_bytes()
+
+    # Extract XML
+    xml_start = data.find(b'<?xml')
+    xml_end = data.find(b'</Mdiapp>') + len(b'</Mdiapp>')
+    if xml_start == -1 or xml_end == -1:
+        raise ValueError("No valid XML header found in MDP file.")
+    xml = data[xml_start:xml_end].decode('utf-8', errors='ignore')
+
+    # Find thumbnail dimensions
+    m = re.search(r'<Thumb[^>]*width="(\d+)"[^>]*height="(\d+)"', xml)
+    if m:
+        width, height = map(int, m.groups())
+    else:
+        width = height = 256
+
+    # Find zlib block
+    zpos = data.find(b'\x78\x9c', xml_end)
+    if zpos == -1:
+        raise ValueError("No zlib stream found after XML section")
+    decompressed = zlib.decompress(data[zpos:])
+
+    # Infer dimensions if mismatch
+    expected_len = width * height * 4
+    if len(decompressed) != expected_len:
+        pixels = len(decompressed) // 4
+        inferred = int(math.sqrt(pixels))
+        width = height = inferred
+
+    # Convert BGRA → RGBA and save
+    arr = np.frombuffer(decompressed, dtype=np.uint8).reshape((height, width, 4))
+    rgba = arr[:, :, [2, 1, 0, 3]]
+    Image.fromarray(rgba, 'RGBA').save(output_path, format='PNG')
+
+    print(f"Thumbnail saved: {output_path}")
+
+if __name__ == "__main__":
+    if len(sys.argv) < 3:
+        print("Usage: mdp-thumbnailer INPUT.mdp OUTPUT.png", file=sys.stderr)
+        sys.exit(1)
+    extract_thumbnail(Path(sys.argv[1]), Path(sys.argv[2]))
