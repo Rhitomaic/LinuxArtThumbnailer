@@ -12,7 +12,13 @@ Right now, the install script works with Ubuntu and Fedora 42, but only tested o
 
 Sadly, since I'm not very good at bash, the install script is generated with ChatGPT.
 
-All you do is go to the folder in which you want to install thumbnailer for, if you want to do both, here's a snippet of bash script for ya!
+All you do is go to the folder in which you want to install thumbnailer for and run:
+
+```bash
+sudo ./install.sh
+```
+
+If you want to do both, here's a snippet of bash script for ya!
 
 ```bash
 cd ClipStudioPaint
