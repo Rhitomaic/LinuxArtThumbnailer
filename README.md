@@ -40,7 +40,6 @@ sudo ./install.sh
 Here are file formats I plan to add
 - [x] .mdp (Medibang Paint Pro/FireAlpaca)
 - [x] .clip (Clip Studio Paint)
-- [ ] .psd (Adobe Photoshop)
 - [ ] .sai (Paint Tool SAI)
 - [ ] .sai2 (Paint Tool SAI 2)
 - [ ] .ipv (Ibis Paint)
