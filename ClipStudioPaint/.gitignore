@@ -6,6 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
+# Rust build artifacts
+target/
+Cargo.lock
+
 # Distribution / packaging
 .Python
 build/

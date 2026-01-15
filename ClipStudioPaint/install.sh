@@ -2,7 +2,6 @@
 set -e
 
 # --- Configuration ---
-THUMB_SCRIPT="clip-thumbnailer"
 THUMB_DESKTOP="clip.thumbnailer"
 MIME_XML="clip.xml"
 
@@ -19,40 +18,66 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # --- Detect package manager ---
-if command -v dnf >/dev/null 2>&1; then
+if command -v pacman >/dev/null 2>&1; then
+    PKG_MANAGER="pacman"
+elif command -v dnf >/dev/null 2>&1; then
     PKG_MANAGER="dnf"
 elif command -v apt >/dev/null 2>&1; then
     PKG_MANAGER="apt"
 else
-    echo "❌ Unsupported system: no dnf or apt found."
+    echo "❌ Unsupported system: no pacman, dnf, or apt found."
     exit 1
 fi
 
-# --- Install Python and pip if missing ---
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "🐍 Installing Python 3..."
-    if [ "$PKG_MANAGER" = "dnf" ]; then
-        dnf install -y python3
+# --- Check for Rust and build optimized version ---
+if command -v cargo >/dev/null 2>&1; then
+    echo "🦀 Rust detected! Building optimized native binary..."
+    
+    # Build release binary (as non-root user if using sudo)
+    if [ -n "$SUDO_USER" ]; then
+        su - "$SUDO_USER" -c "cd '$PWD' && cargo build --release" || {
+            echo "⚠️  Rust build failed, falling back to Python version"
+            USE_RUST=0
+        }
     else
-        apt update && apt install -y python3
+        cargo build --release || {
+            echo "⚠️  Rust build failed, falling back to Python version"
+            USE_RUST=0
+        }
     fi
+    
+    if [ -f "target/release/clip-thumbnailer-rs" ]; then
+        echo "📦 Installing Rust binary → $BIN_DIR/clip-thumbnailer"
+        install -Dm755 "target/release/clip-thumbnailer-rs" "$BIN_DIR/clip-thumbnailer"
+        USE_RUST=1
+    fi
+else
+    echo "⚠️  Rust not found. Install with: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    echo "📝 Falling back to Python version (slower but works)"
+    USE_RUST=0
 fi
 
-# --- Install Python dependencies ---
-echo "📚 Installing required Python libraries (numpy, Pillow)..."
-if [ "$PKG_MANAGER" = "dnf" ]; then
-    dnf install -y python3-numpy python3-pillow
-else
-    apt install -y python3-numpy python3-pil
-fi
-
-# --- Install the thumbnailer script ---
-if [[ -f "$THUMB_SCRIPT" ]]; then
-    echo "📦 Installing $THUMB_SCRIPT → $BIN_DIR"
-    install -Dm755 "$THUMB_SCRIPT" "$BIN_DIR/$THUMB_SCRIPT"
-else
-    echo "❌ $THUMB_SCRIPT not found!"
-    exit 1
+# --- Install Python version as fallback ---
+if [ "$USE_RUST" != "1" ]; then
+    # Install Python if missing
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "🐍 Installing Python 3..."
+        if [ "$PKG_MANAGER" = "pacman" ]; then
+            pacman -S --noconfirm python
+        elif [ "$PKG_MANAGER" = "dnf" ]; then
+            dnf install -y python3
+        else
+            apt update && apt install -y python3
+        fi
+    fi
+    
+    if [[ -f "clip-thumbnailer.py" ]]; then
+        echo "📦 Installing Python script → $BIN_DIR/clip-thumbnailer"
+        install -Dm755 "clip-thumbnailer.py" "$BIN_DIR/clip-thumbnailer"
+    else
+        echo "❌ clip-thumbnailer.py script not found!"
+        exit 1
+    fi
 fi
 
 # --- Install MIME type XML ---
@@ -87,7 +112,17 @@ rm -rf ~/.cache/thumbnails/* || true
 
 echo ""
 echo "✅ Installation complete!"
+if [ "$USE_RUST" = "1" ]; then
+    echo "🦀 Using high-performance Rust implementation (10x+ faster)"
+else
+    echo "🐍 Using Python implementation (consider installing Rust for 10x+ speedup)"
+fi
+echo ""
 echo "Try running:"
 echo "  clip-thumbnailer input.clip output.png"
+echo ""
+echo "⚠️  For large files (>500MB): Increase Dolphin's file size limit"
+echo "   Edit ~/.config/dolphinrc under [PreviewSettings]:"
+echo "   MaximumSize=2147483648  # 2GB limit"
 echo ""
 echo "If Dolphin or Nautilus doesn't show thumbnails yet, enable it in the preferences, or restart it or log out."

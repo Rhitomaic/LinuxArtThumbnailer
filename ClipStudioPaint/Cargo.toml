@@ -1,0 +1,15 @@
+[package]
+name = "clip-thumbnailer-rs"
+version = "0.1.0"
+edition = "2024"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = 3
+
+[dependencies]
+memmap2 = "0.9"
+memchr = "2.7"
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }

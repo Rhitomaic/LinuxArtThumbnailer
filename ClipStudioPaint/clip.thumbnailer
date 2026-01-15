@@ -1,4 +1,4 @@
 [Thumbnailer Entry]
 TryExec=clip-thumbnailer
 Exec=clip-thumbnailer %i %o
-MimeType=application/x-celsys-clip;
+MimeType=application/x-celsys-clip;application/x-wine-extension-clip;
