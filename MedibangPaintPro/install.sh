@@ -19,32 +19,40 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # --- Detect package manager ---
-if command -v dnf >/dev/null 2>&1; then
+if command -v pacman >/dev/null 2>&1; then
+    PKG_MANAGER="pacman"
+elif command -v dnf >/dev/null 2>&1; then
     PKG_MANAGER="dnf"
 elif command -v apt >/dev/null 2>&1; then
     PKG_MANAGER="apt"
 else
-    echo "❌ Unsupported system: no dnf or apt found."
+    echo "❌ Unsupported system: no pacman, dnf or apt found."
     exit 1
 fi
 
 # --- Install Python and pip if missing ---
 if ! command -v python3 >/dev/null 2>&1; then
     echo "🐍 Installing Python 3..."
-    if [ "$PKG_MANAGER" = "dnf" ]; then
-        dnf install -y python3
-    else
-        apt update && apt install -y python3
-    fi
+    case "$PKG_MANAGER" in
+        pacman) pacman -Sy --noconfirm python ;;
+        dnf)    dnf install -y python3 ;;
+        apt)    apt update && apt install -y python3 ;;
+    esac
 fi
 
 # --- Install Python dependencies ---
 echo "📚 Installing required Python libraries (numpy, Pillow)..."
-if [ "$PKG_MANAGER" = "dnf" ]; then
-    dnf install -y python3-numpy python3-pillow
-else
-    apt install -y python3-numpy python3-pil
-fi
+case "$PKG_MANAGER" in
+    pacman)
+        pacman -S --noconfirm python-numpy python-pillow
+        ;;
+    dnf)
+        dnf install -y python3-numpy python3-pillow
+        ;;
+    apt)
+        apt install -y python3-numpy python3-pil
+        ;;
+esac
 
 # --- Install the thumbnailer script ---
 if [[ -f "$THUMB_SCRIPT" ]]; then
@@ -82,6 +90,8 @@ if command -v update-desktop-database >/dev/null 2>&1; then
 fi
 
 # --- Clear cache ---
+# Running as root, we should target the actual user's cache if possible,
+# but this keeps your original logic for the current user environment.
 echo "🧹 Clearing thumbnail cache..."
 rm -rf ~/.cache/thumbnails/* || true
 
@@ -89,5 +99,3 @@ echo ""
 echo "✅ Installation complete!"
 echo "Try running:"
 echo "  mdp-thumbnailer input.mdp output.png"
-echo ""
-echo "If Dolphin or Nautilus doesn't show thumbnails yet, enable it in the preferences, or restart it or log out/in."
