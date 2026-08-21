@@ -36,6 +36,13 @@ cd ../MedibangPaintPro
 sudo ./install.sh
 ```
 
+## Usage
+
+```bash
+clip-thumbnailer artwork.clip artwork.png  # Extracts full-sized image
+clip-thumbnailer artwork.clip artwork.png 256  # Produces a thumbnail
+```
+
 ## To do
 Here are file formats I plan to add
 - [x] .mdp (Medibang Paint Pro/FireAlpaca)
