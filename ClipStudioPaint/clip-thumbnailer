@@ -4,10 +4,15 @@ clip-thumbnailer
 Generates thumbnails for Clip Studio Paint (.clip) files.
 
 Usage:
-    clip-thumbnailer [input_file] [output_file]
+    clip-thumbnailer [input_file] [output_file] [max_dimension]
+
+Arguments:
+    input_file      Path to the .clip file
+    output_file     Path for the output PNG file
+    max_dimension   Optional: maximum width or height in pixels (default: no scaling)
 
 Example:
-    clip-thumbnailer artwork.clip /tmp/artwork.png
+    clip-thumbnailer artwork.clip /tmp/artwork.png 256
 
 Credits:
     Thank you so much LavenderSnek for making https://github.com/LavenderSnek/clipdecode so I can use it as a reference!
@@ -16,6 +21,8 @@ Credits:
 import sys
 import sqlite3
 from pathlib import Path
+from io import BytesIO
+from PIL import Image
 
 def extract_sqlite_from_clip(clip_path: Path) -> bytes:
     data = clip_path.read_bytes()
@@ -49,21 +56,39 @@ def extract_canvas_preview(sqlite_bytes: bytes) -> bytes | None:
     finally:
         conn.close()
 
-def extract_clip_thumbnail(input_path: Path, output_path: Path):
+def scale_image(png_bytes: bytes, max_dimension: int) -> bytes:
+    """Scale image so its maximum dimension is max_dimension pixels."""
+    img = Image.open(BytesIO(png_bytes))
+    img.thumbnail((max_dimension, max_dimension), Image.LANCZOS)
+    output = BytesIO()
+    img.save(output, format="PNG")
+    return output.getvalue()
+
+def extract_clip_thumbnail(input_path: Path, output_path: Path, max_dimension: int | None = None):
     sqlite_bytes = extract_sqlite_from_clip(input_path)
     png_bytes = extract_canvas_preview(sqlite_bytes)
     if not png_bytes:
         raise RuntimeError("No CanvasPreview image found in this .clip file")
+    if max_dimension is not None:
+        png_bytes = scale_image(png_bytes, max_dimension)
     output_path.write_bytes(png_bytes)
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: clip-thumbnailer [input_file] [output_file]")
+        print("Usage: clip-thumbnailer [input_file] [output_file] [max_dimension]")
         sys.exit(1)
     input_file = Path(sys.argv[1])
     output_file = Path(sys.argv[2])
+    max_dimension = None
+    if len(sys.argv) >= 4:
+        try:
+            max_dimension = int(sys.argv[3])
+        except ValueError:
+            print("Error: max_dimension must be an integer", file=sys.stderr)
+            print("Generating full-size image")
+            max_dimension = None
     try:
-        extract_clip_thumbnail(input_file, output_file)
+        extract_clip_thumbnail(input_file, output_file, max_dimension)
     except Exception as e:
         print(f"Error generating thumbnail: {e}", file=sys.stderr)
         sys.exit(1)
