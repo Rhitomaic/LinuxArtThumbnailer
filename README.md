@@ -20,7 +20,7 @@ Special thanks to [LavenderSnek](https://github.com/LavenderSnek) for their work
 This project **only reads embedded preview images** in `.mdp`, `.clip` and `.sai2` files. It does **not** reverse-engineer proprietary file formats, access full artwork layers, or modify the original files. Users must own the original software and files to be able to create and modify the file in the first place.
 
 ## How to install?
-Right now, the install script works with Ubuntu and Fedora 42, but only tested on [Fedora 42 - KDE Plasma](https://fedoraproject.org/wiki/Releases/42/ChangeSet) - on [Dolphin](https://apps.kde.org/dolphin/).
+Right now, the install script works with Ubuntu, Fedora 42 and Arch Linux, though it's only been tested on [Fedora 42 - KDE Plasma](https://fedoraproject.org/wiki/Releases/42/ChangeSet) - on [Dolphin](https://apps.kde.org/dolphin/) - and on Arch Linux too.
 
 Sadly, since I'm not very good at bash, the install script is generated with ChatGPT.
 
