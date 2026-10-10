@@ -34,7 +34,7 @@ def extract_thumbnail(mdp_path: Path, output_path: Path):
         inferred = int(math.sqrt(pixels))
         width = height = inferred
 
-    # Convert BGRA → RGBA and save
+    # Convert BGRA to RGBA and save
     arr = np.frombuffer(decompressed, dtype=np.uint8).reshape((height, width, 4))
     rgba = arr[:, :, [2, 1, 0, 3]]
     Image.fromarray(rgba, 'RGBA').save(output_path, format='PNG')

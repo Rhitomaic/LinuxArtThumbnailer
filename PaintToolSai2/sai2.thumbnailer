@@ -1,0 +1,4 @@
+[Thumbnailer Entry]
+TryExec=sai2-thumbnailer
+Exec=sai2-thumbnailer %i %o
+MimeType=application/x-painttool-sai2;

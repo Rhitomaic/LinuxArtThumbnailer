@@ -1,0 +1,324 @@
+#!/usr/bin/env python3
+"""
+sai2-thumbnailer
+Generates thumbnails for Paint Tool SAI 2 (.sai2) files.
+
+Usage:
+    sai2-thumbnailer [input_file] [output_file]
+
+Example:
+    sai2-thumbnailer artwork.sai2 /tmp/artwork.png
+
+The .sai2 container stores an embedded preview in its "thum" segment using a
+compact JPEG variant the app calls "jssf". This script decodes that embedded
+preview only. It never touches the artwork layers and never modifies the file.
+
+Credits:
+    Format reference derived from the community reverse-engineering of the
+    SAI2 container / jssf codec (kagami-meika/sai2-thumbnail-provider and
+    Wunkolo/libsai). Thank you.
+"""
+
+import sys
+import struct
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+# ---------------------------------------------------------------------------
+# Standard JPEG baseline Huffman tables (hard-coded inside jssf)
+# ---------------------------------------------------------------------------
+DC0_BITS = [0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0]
+DC0_VAL = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+
+AC0_BITS = [0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 0x7D]
+AC0_VAL = [
+    0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06,
+    0x13, 0x51, 0x61, 0x07, 0x22, 0x71, 0x14, 0x32, 0x81, 0x91, 0xA1, 0x08,
+    0x23, 0x42, 0xB1, 0xC1, 0x15, 0x52, 0xD1, 0xF0, 0x24, 0x33, 0x62, 0x72,
+    0x82, 0x09, 0x0A, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x25, 0x26, 0x27, 0x28,
+    0x29, 0x2A, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x43, 0x44, 0x45,
+    0x46, 0x47, 0x48, 0x49, 0x4A, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59,
+    0x5A, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x73, 0x74, 0x75,
+    0x76, 0x77, 0x78, 0x79, 0x7A, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89,
+    0x8A, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9A, 0xA2, 0xA3,
+    0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6,
+    0xB7, 0xB8, 0xB9, 0xBA, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9,
+    0xCA, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD7, 0xD8, 0xD9, 0xDA, 0xE1, 0xE2,
+    0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xF1, 0xF2, 0xF3, 0xF4,
+    0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA,
+]
+
+DC1_BITS = [0, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
+DC1_VAL = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+
+AC1_BITS = [0, 2, 1, 2, 4, 4, 3, 4, 7, 5, 4, 4, 0, 1, 2, 0x77]
+AC1_VAL = [
+    0x00, 0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21, 0x31, 0x06, 0x12, 0x41,
+    0x51, 0x07, 0x61, 0x71, 0x13, 0x22, 0x32, 0x81, 0x08, 0x14, 0x42, 0x91,
+    0xA1, 0xB1, 0xC1, 0x09, 0x23, 0x33, 0x52, 0xF0, 0x15, 0x62, 0x72, 0xD1,
+    0x0A, 0x16, 0x24, 0x34, 0xE1, 0x25, 0xF1, 0x17, 0x18, 0x19, 0x1A, 0x26,
+    0x27, 0x28, 0x29, 0x2A, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x43, 0x44,
+    0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58,
+    0x59, 0x5A, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x73, 0x74,
+    0x75, 0x76, 0x77, 0x78, 0x79, 0x7A, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87,
+    0x88, 0x89, 0x8A, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9A,
+    0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xB2, 0xB3, 0xB4,
+    0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7,
+    0xC8, 0xC9, 0xCA, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD7, 0xD8, 0xD9, 0xDA,
+    0xE2, 0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xF2, 0xF3, 0xF4,
+    0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA,
+]
+
+ZIGZAG = [
+    0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33,
+    40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43,
+    36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53,
+    60, 61, 54, 47, 55, 62, 63,
+]
+
+
+def build_huff(bits, vals):
+    """Build a {(length, code): symbol} lookup from a JPEG DHT."""
+    table = {}
+    code = 0
+    idx = 0
+    for length in range(1, 17):
+        for _ in range(bits[length - 1]):
+            if idx < len(vals):
+                table[(length, code)] = vals[idx]
+            idx += 1
+            code += 1
+        code <<= 1
+    return table
+
+
+DC0 = build_huff(DC0_BITS, DC0_VAL)
+AC0 = build_huff(AC0_BITS, AC0_VAL)
+DC1 = build_huff(DC1_BITS, DC1_VAL)
+AC1 = build_huff(AC1_BITS, AC1_VAL)
+
+# Precomputed IDCT matrix: out = IDCT_M @ freq @ IDCT_M.T
+_iu = np.arange(8)
+IDCT_M = np.zeros((8, 8), dtype=np.float64)
+for y in range(8):
+    for v in range(8):
+        cv = 1.0 / np.sqrt(2.0) if v == 0 else 1.0
+        IDCT_M[y, v] = 0.5 * cv * np.cos((2 * y + 1) * v * np.pi / 16.0)
+
+
+class BitReader:
+    """MSB-first bit reader with JPEG FF00 byte stuffing."""
+
+    def __init__(self, data):
+        self.data = data
+        self.size = len(data)
+        self.pos = 0
+        self.bit = 0
+
+    def read_bit(self):
+        if self.pos >= self.size:
+            return 0
+        b = self.data[self.pos]
+        v = (b >> (7 - self.bit)) & 1
+        self.bit += 1
+        if self.bit == 8:
+            self.bit = 0
+            self.pos += 1
+            if b == 0xFF:
+                self.pos += 1  # skip stuffed 0x00
+        return v
+
+    def read_bits(self, n):
+        v = 0
+        for _ in range(n):
+            v = (v << 1) | self.read_bit()
+        return v
+
+
+def read_huff(reader, table):
+    code = 0
+    for length in range(1, 17):
+        code = (code << 1) | reader.read_bit()
+        sym = table.get((length, code))
+        if sym is not None:
+            return sym
+    return -1
+
+
+def decode_block(reader, dc_table, ac_table, prev_dc):
+    """Decode one 8x8 block; returns (coeff[64] natural order, new prev_dc)."""
+    coeff = np.zeros(64, dtype=np.float64)
+
+    ssss = read_huff(reader, dc_table)
+    if ssss <= 0:
+        dc = prev_dc
+    else:
+        bits = reader.read_bits(ssss)
+        if bits < (1 << (ssss - 1)):
+            dc = prev_dc - ((1 << ssss) - 1 - bits)
+        else:
+            dc = prev_dc + bits
+    prev_dc = dc
+    coeff[0] = dc
+
+    k = 1
+    while k < 64:
+        rs = read_huff(reader, ac_table)
+        if rs < 0:
+            break
+        if rs == 0x00:
+            break  # EOB
+        rr = rs >> 4
+        ss = rs & 0x0F
+        if rr == 15 and ss == 0:
+            k += 16  # ZRL
+            continue
+        k += rr
+        if k >= 64:
+            break
+        bits = reader.read_bits(ss)
+        if ss == 0:
+            val = 0
+        elif bits < (1 << (ss - 1)):
+            val = bits - ((1 << ss) - 1)
+        else:
+            val = bits
+        coeff[ZIGZAG[k]] = val
+        k += 1
+
+    return coeff, prev_dc
+
+
+def find_segment(data, tag):
+    """"Return the byte offset of a named segment, or -1."""
+    n = struct.unpack_from("<I", data, 0x20)[0] if len(data) >= 0x24 else 0
+    for i in range(n):
+        off = 0x40 + i * 16
+        if off + 16 > len(data):
+            break
+        if data[off:off + 4] == tag:
+            return struct.unpack_from("<Q", data, off + 8)[0]
+    # Fallback scan if the count is unreliable.
+    off = 0x40
+    while off + 16 <= len(data) and off < 0x400:
+        if data[off:off + 4] == tag:
+            return struct.unpack_from("<Q", data, off + 8)[0]
+        off += 16
+    return -1
+
+
+def segment_end(data, seg_off):
+    """End of a segment = next-higher segment offset, else end of file."""
+    end = len(data)
+    n = struct.unpack_from("<I", data, 0x20)[0] if len(data) >= 0x24 else 0
+    for i in range(n):
+        off = 0x40 + i * 16
+        if off + 16 > len(data):
+            break
+        seg = struct.unpack_from("<Q", data, off + 8)[0]
+        if seg_off < seg < end:
+            end = seg
+    return end
+
+
+def decode_jssf(body):
+    """Decode a jssf body (the contents of the 'thum' segment) to an RGB array."""
+    if len(body) < 0x92 or body[8:12] != b"jssf":
+        raise RuntimeError("jssf: bad header")
+
+    width, height = struct.unpack_from("<II", body, 0)
+    if width == 0 or height == 0 or width > 8192 or height > 8192:
+        raise RuntimeError("jssf: bad dimensions")
+
+    comps = struct.unpack_from("<H", body, 0x10)[0]
+    if comps not in (1, 3):
+        raise RuntimeError(f"jssf: unsupported component count {comps}")
+
+    dqt = []
+    dqt.append(np.frombuffer(body, dtype=np.uint8, count=64, offset=0x12).astype(np.float64))
+    if comps > 1:
+        dqt.append(np.frombuffer(body, dtype=np.uint8, count=64, offset=0x52).astype(np.float64))
+
+    entropy = body[0x52 if comps == 1 else 0x92:]
+    ent_size = len(entropy)
+
+    dc_tables = [DC0, DC1, DC1]
+    ac_tables = [AC0, AC1, AC1]
+    qtables = [dqt[0], dqt[-1], dqt[-1]]
+
+    nw = (width + 7) // 8
+    nh = (height + 7) // 8
+
+    planes = [np.zeros((height, width), dtype=np.float64) for _ in range(comps)]
+
+    ep = 0
+    for by in range(nh):
+        if ep + 2 > ent_size:
+            raise RuntimeError("jssf: truncated row header")
+        (row_len,) = struct.unpack_from("<H", entropy, ep)
+        ep += 2
+        if ep + row_len > ent_size:
+            raise RuntimeError("jssf: truncated row")
+        row = entropy[ep:ep + row_len]
+        ep += row_len
+
+        reader = BitReader(row)
+        prev_dc = [0, 0, 0]
+        for bx in range(nw):
+            for c in range(comps):
+                coeff, prev_dc[c] = decode_block(reader, dc_tables[c], ac_tables[c], prev_dc[c])
+                freq = (coeff * qtables[c]).reshape(8, 8)
+                block = IDCT_M @ freq @ IDCT_M.T
+                x0, y0 = bx * 8, by * 8
+                x1, y1 = min(x0 + 8, width), min(y0 + 8, height)
+                planes[c][y0:y1, x0:x1] = (block[:y1 - y0, :x1 - x0] + 128.0)
+
+    y = planes[0]
+    if comps > 1:
+        cb = planes[1] - 128.0
+        cr = planes[2] - 128.0
+    else:
+        cb = np.zeros_like(y)
+        cr = np.zeros_like(y)
+
+    r = y + 1.402 * cr
+    g = y - 0.344136 * cb - 0.714136 * cr
+    b = y + 1.772 * cb
+
+    rgb = np.stack([r, g, b], axis=-1)
+    return np.clip(np.round(rgb), 0, 255).astype(np.uint8)
+
+
+def extract_thumbnail(input_path, output_path):
+    data = input_path.read_bytes()
+    if len(data) < 0x40 or data[:16] != b"SAI-CANVAS-TYPE0":
+        raise RuntimeError("Not a valid .sai2 file")
+
+    thum_off = find_segment(data, b"thum")
+    if thum_off < 0 or thum_off + 8 >= len(data):
+        raise RuntimeError("No 'thum' preview segment found in this .sai2 file")
+
+    end = segment_end(data, thum_off)
+    body = data[thum_off:end]
+
+    rgb = decode_jssf(body)
+    Image.fromarray(rgb, "RGB").save(output_path, format="PNG")
+
+
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: sai2-thumbnailer [input_file] [output_file]")
+        sys.exit(1)
+    input_file = Path(sys.argv[1])
+    output_file = Path(sys.argv[2])
+    try:
+        extract_thumbnail(input_file, output_file)
+    except Exception as e:
+        print(f"Error generating thumbnail: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
